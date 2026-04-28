@@ -207,32 +207,31 @@ def copy_metadata_json(root_dir, out_dir):
 
 
 if __name__ == "__main__":
-    root_dir = Path(r"F:\hls\L30")
-    out_dir = Path(r"F:\processed\L30")
-    out_dir.mkdri(parents=True, exist_ok=True)
+    root_dir = Path(r"F:\yukon\hls\S30")
+    out_dir = Path(r"F:\yukon\processed\S30")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # bands_to_include = [  # S30
-    #     "B02",  # blue
-    #     "B03",  # green
-    #     "B04",  # red
-    #     "B05",  # red-edge
-    #     "B06",  # red-edge
-    #     "B07",  # red-edge
-    #     "B08",  # nir
-    #     "B11",  # swir
-    #     "B12",  # swir
-    # ]
-
-    bands_to_include = [  # L30
+    bands_to_include = [  # S30
         "B02",  # blue
         "B03",  # green
         "B04",  # red
-        "B05",  # nir
-        "B06",  # swir
-        "B07",  # swir
+        "B05",  # red-edge
+        "B06",  # red-edge
+        "B07",  # red-edge
+        "B08",  # nir
+        "B11",  # swir
+        "B12",  # swir
     ]
+
+    # bands_to_include = [  # L30
+    #     "B02",  # blue
+    #     "B03",  # green
+    #     "B04",  # red
+    #     "B05",  # nir
+    #     "B06",  # swir
+    #     "B07",  # swir
+    # ]
 
     copy_fmask_files(root_dir, out_dir)
     copy_metadata_json(root_dir, out_dir)
     create_raster_stacks(root_dir, out_dir, bands_to_include)
-    

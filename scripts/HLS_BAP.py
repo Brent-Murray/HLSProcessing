@@ -449,10 +449,10 @@ def write_raster(output_path, array, profile):
 
 
 if __name__ == "__main__":
-    composite_dir = Path(r"F:\processed\L30\composites")
-    fmask_dir = Path(r"F:\processed\L30\fmask")
-    metadata_dir = Path(r"F:\processed\L30\metadata")
-    output_dir = Path(r"F:\processed\L30\bap_outputs")
+    composite_dir = Path(r"F:\yukon\processed\L30\composites")
+    fmask_dir = Path(r"F:\yukon\processed\L30\fmask")
+    metadata_dir = Path(r"F:\yukon\processed\L30\metadata")
+    output_dir = Path(r"F:\yukon\processed\L30\bap_outputs")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     records, skipped = index_files(composite_dir, fmask_dir, metadata_dir)
