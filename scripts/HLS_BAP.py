@@ -46,33 +46,60 @@ def read_cloud_cover(metadata_path):
 
 def index_files(composite_dir, fmask_dir, metadata_dir):
     records = defaultdict(dict)
+    skipped = []
 
     for path in Path(composite_dir).glob("*.tif"):
-        tile, yyyyddd, year, doy, _ = parse_hls_name(path)
-        records[(tile, yyyyddd)]["image_path"] = path
-        records[(tile, yyyyddd)]["tile"] = tile
-        records[(tile, yyyyddd)]["yyyyddd"] = yyyyddd
-        records[(tile, yyyyddd)]["year"] = year
-        records[(tile, yyyyddd)]["doy"] = doy
+        try:
+            tile, yyyyddd, year, doy, _ = parse_hls_name(path)
+            records[(tile, yyyyddd)]["image_path"] = path
+            records[(tile, yyyyddd)]["tile"] = tile
+            records[(tile, yyyyddd)]["yyyyddd"] = yyyyddd
+            records[(tile, yyyyddd)]["year"] = year
+            records[(tile, yyyyddd)]["doy"] = doy
+        except Exception as e:
+            skipped.append((path, f"bad composite removed: {e}"))
+            if Path(path).exists():
+                Path(path).unlink()
 
     for path in Path(fmask_dir).glob("*.tif"):
-        tile, yyyyddd, _, _, _ = parse_hls_name(path)
-        records[(tile, yyyyddd)]["fmask_path"] = path
+        try:
+            tile, yyyyddd, _, _, _ = parse_hls_name(path)
+            records[(tile, yyyyddd)]["fmask_path"] = path
+        except Exception as e:
+            skipped.append((path, f"bad fmask removed: {e}"))
+            if Path(path).exists():
+                Path(path).unlink()
 
     for path in Path(metadata_dir).glob("*.json"):
-        tile, yyyyddd, _, _, _ = parse_hls_name(path)
-        records[(tile, yyyyddd)]["metadata_path"] = path
-        records[(tile, yyyyddd)]["scene_cloud_pct"] = read_cloud_cover(path)
+        try:
+            tile, yyyyddd, _, _, _ = parse_hls_name(path)
+            key = (tile, yyyyddd)
+            scene_cloud_pct = read_cloud_cover(path)
+        except Exception as e:
+            skipped.append((path, f"bad metadata removed: {e}"))
+            if Path(path).exists():
+                Path(path).unlink()
+            continue
+
+        records[key]["metadata_path"] = path
+        records[key]["scene_cloud_pct"] = scene_cloud_pct
 
     complete = []
-    skipped = []
 
     for key, rec in records.items():
         required = {"image_path", "fmask_path", "metadata_path", "scene_cloud_pct"}
         missing = required - set(rec)
 
         if missing:
-            skipped.append((key, missing))
+            for bad_path in [
+                rec.get("image_path"),
+                rec.get("fmask_path"),
+                rec.get("metadata_path"),
+            ]:
+                if bad_path is not None and Path(bad_path).exists():
+                    Path(bad_path).unlink()
+
+            skipped.append((key, f"incomplete scene removed, missing: {missing}"))
         else:
             complete.append(rec)
 
@@ -449,10 +476,10 @@ def write_raster(output_path, array, profile):
 
 
 if __name__ == "__main__":
-    composite_dir = Path(r"F:\yukon\processed\L30\composites")
-    fmask_dir = Path(r"F:\yukon\processed\L30\fmask")
-    metadata_dir = Path(r"F:\yukon\processed\L30\metadata")
-    output_dir = Path(r"F:\yukon\processed\L30\bap_outputs")
+    composite_dir = Path(r"F:\yukon\processed\S30\composites")
+    fmask_dir = Path(r"F:\yukon\processed\S30\fmask")
+    metadata_dir = Path(r"F:\yukon\processed\S30\metadata")
+    output_dir = Path(r"F:\yukon\processed\S30\bap_outputs")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     records, skipped = index_files(composite_dir, fmask_dir, metadata_dir)
