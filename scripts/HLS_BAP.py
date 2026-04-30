@@ -9,8 +9,10 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+from rasterio.windows import Window
 from scipy.ndimage import distance_transform_edt
 from tqdm import tqdm
+from math import ceil
 
 
 def parse_hls_name(path):
@@ -365,6 +367,174 @@ def best_available_pixel_hls(
     return composite, best_idx, profile, skipped
 
 
+def expand_window(window, pad, height, width):
+    col_off = max(0, window.col_off - pad)
+    row_off = max(0, window.row_off - pad)
+
+    col_end = min(width, window.col_off + window.width + pad)
+    row_end = min(height, window.row_off + window.height + pad)
+
+    return Window(
+        col_off=col_off,
+        row_off=row_off,
+        width=col_end - col_off,
+        height=row_end - row_off,
+    )
+
+
+def best_available_pixel_hls_windowed(
+    image_paths,
+    fmask_paths,
+    doy,
+    scene_cloud_pct=None,
+    target_doy=200,
+    doy_sigma=30,
+    max_cloud_distance=10,
+    include_water=True,
+    mask_medium_high_aerosol=True,
+):
+    """
+    Create a Best Available Pixel (BAP) composite using windowed processing.
+
+    This version processes one raster block at a time instead of loading all
+    scenes into memory. It keeps the original BAP scoring logic:
+
+        score = DOY_score * scene_cloud_score * cloud_distance_score
+
+    Parameters
+    ----------
+    image_paths : list
+        Paths to multiband image rasters.
+    fmask_paths : list
+        Paths to corresponding HLS Fmask QA rasters.
+    doy : list or array-like
+        Day-of-year for each scene.
+    scene_cloud_pct : list or array-like, optional
+        Scene-level cloud cover percentage for each scene.
+    target_doy : int
+        Preferred day of year.
+    doy_sigma : float
+        Gaussian spread around target DOY.
+    max_cloud_distance : int
+        Distance in pixels where cloud-distance score saturates.
+    include_water : bool
+        If False, water pixels are masked out.
+    mask_medium_high_aerosol : bool
+        If True, medium/high aerosol pixels are masked out.
+
+    Returns
+    -------
+    composite : np.ndarray
+        Composite raster with shape (bands, rows, cols).
+    best_idx : np.ndarray
+        Selected scene index per pixel, shape (rows, cols).
+    profile : dict
+        Rasterio profile from the first image.
+    skipped : list
+        Empty list, included for compatibility.
+    """
+
+    doy = np.asarray(doy, dtype=np.float32)
+    n = len(image_paths)
+
+    doy_score = gaussian_score(doy, target_doy, doy_sigma).astype(np.float32)
+
+    if scene_cloud_pct is None:
+        scene_score = np.ones(n, dtype=np.float32)
+    else:
+        scene_cloud_pct = np.asarray(scene_cloud_pct, dtype=np.float32)
+        scene_score = np.exp(-scene_cloud_pct / 20).astype(np.float32)
+
+    base_score = doy_score * scene_score
+
+    srcs = [rasterio.open(p) for p in image_paths]
+    qa_srcs = [rasterio.open(p) for p in fmask_paths]
+
+    try:
+        profile = srcs[0].profile.copy()
+        bands = srcs[0].count
+        height = srcs[0].height
+        width = srcs[0].width
+        dtype = srcs[0].dtypes[0]
+        nodata = profile.get("nodata", -9999)
+
+        composite = np.full((bands, height, width), nodata, dtype=dtype)
+        best_idx = np.full((height, width), -1, dtype=np.int16)
+
+        block_height, block_width = srcs[0].block_shapes[0]
+        n_windows = ceil(height / block_height) * ceil(width / block_width)
+
+        for _, window in tqdm(
+            srcs[0].block_windows(1),
+            total=n_windows,
+            desc="Processing tile windows",
+            leave=False,
+        ):
+            row0 = int(window.row_off)
+            col0 = int(window.col_off)
+            h = int(window.height)
+            w = int(window.width)
+
+            padded_window = expand_window(
+                window,
+                pad=max_cloud_distance,
+                height=height,
+                width=width,
+            )
+
+            prow0 = int(window.row_off - padded_window.row_off)
+            pcol0 = int(window.col_off - padded_window.col_off)
+
+            block_best_score = np.full((h, w), -np.inf, dtype=np.float32)
+            block_best_idx = np.full((h, w), -1, dtype=np.int16)
+            block_composite = np.full((bands, h, w), nodata, dtype=dtype)
+
+            for i in range(n):
+                qa = qa_srcs[i].read(
+                    1,
+                    window=padded_window,
+                    out_dtype="uint8",
+                )
+
+                clear_padded = create_hls_clear_mask(
+                    qa,
+                    include_water=include_water,
+                    mask_medium_high_aerosol=mask_medium_high_aerosol,
+                )
+
+                dist_padded = cloud_distance_score(
+                    clear_padded,
+                    max_distance=max_cloud_distance,
+                )
+
+                clear = clear_padded[prow0:prow0 + h, pcol0:pcol0 + w]
+                dist_score = dist_padded[prow0:prow0 + h, pcol0:pcol0 + w]
+
+                score = base_score[i] * dist_score
+                score[~clear] = -np.inf
+
+                update = score > block_best_score
+
+                if np.any(update):
+                    img = srcs[i].read(window=window)
+
+                    block_composite[:, update] = img[:, update]
+                    block_best_score[update] = score[update]
+                    block_best_idx[update] = i
+
+            composite[:, row0:row0 + h, col0:col0 + w] = block_composite
+            best_idx[row0:row0 + h, col0:col0 + w] = block_best_idx
+
+        return composite, best_idx, profile, []
+
+    finally:
+        for src in srcs:
+            src.close()
+
+        for src in qa_srcs:
+            src.close()
+
+
 def write_raster(output_path, array, profile):
     profile = profile.copy()
     profile.update(count=array.shape[0], dtype=array.dtype, compress="deflate")
@@ -395,7 +565,19 @@ if __name__ == "__main__":
         if out_path.exists():
             continue
         try:
-            composite, best_idx, profile, skipped = best_available_pixel_hls(
+            # composite, best_idx, profile, skipped = best_available_pixel_hls(
+            #     image_paths=image_paths,
+            #     fmask_paths=fmask_paths,
+            #     doy=doy,
+            #     scene_cloud_pct=scene_cloud_pct,
+            #     target_doy=213,
+            #     doy_sigma=40,
+            #     max_cloud_distance=10,
+            #     include_water=True,
+            #     mask_medium_high_aerosol=True,
+            # )
+
+            composite, best_idx, profile, skipped = best_available_pixel_hls_windowed(
                 image_paths=image_paths,
                 fmask_paths=fmask_paths,
                 doy=doy,
