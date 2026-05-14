@@ -36,10 +36,7 @@ def gapfill_target_bap(
 
     final = target.copy()
 
-    target_valid = (
-        ~np.all(final == nodata, axis=0)
-        & np.all(final >= 0, axis=0)
-    )
+    target_valid = ~np.all(final == nodata, axis=0) & np.all(final >= 0, axis=0)
 
     missing = ~target_valid
 
@@ -47,29 +44,20 @@ def gapfill_target_bap(
         with rasterio.open(fill_path) as src:
             fill = src.read()
 
-        fill_valid = (
-            ~np.all(fill == nodata, axis=0)
-            & np.all(fill >= 0, axis=0)
-        )
+        fill_valid = ~np.all(fill == nodata, axis=0) & np.all(fill >= 0, axis=0)
 
         update = missing & fill_valid
 
         final[:, update] = fill[:, update]
 
-        target_valid = (
-            ~np.all(final == nodata, axis=0)
-            & np.all(final >= 0, axis=0)
-        )
+        target_valid = ~np.all(final == nodata, axis=0) & np.all(final >= 0, axis=0)
 
         missing = ~target_valid
 
         if not np.any(missing):
             break
 
-    final[:, ~(
-        ~np.all(final == nodata, axis=0)
-        & np.all(final >= 0, axis=0)
-    )] = nodata
+    final[:, ~(~np.all(final == nodata, axis=0) & np.all(final >= 0, axis=0))] = nodata
 
     profile.update(
         count=final.shape[0],
@@ -104,7 +92,7 @@ def merge_gapfilled_tiles_windowed(
     if len(raster_paths) == 0:
         raise RuntimeError(f"No rasters found in: {input_dir}")
 
-    srcs = [rasterio.open(p) for p in tqdm(raster_paths, desc="Opening rasters")]
+    srcs = [rasterio.open(p) for p in raster_paths]
 
     try:
         ref = srcs[0]
@@ -212,7 +200,7 @@ def merge_gapfilled_tiles_windowed(
 if __name__ == "__main__":
     target_year = 2024
     fill_years = [2025, 2023]
-    sensor = "S30"
+    sensor = "L30"
 
     target_dir = Path(rf"F:\yukon\processed\{sensor}\{target_year}\bap_outputs")
     output_dir = Path(rf"F:\yukon\processed\{sensor}\gap_filled\{target_year}")
