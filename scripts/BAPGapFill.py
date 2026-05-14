@@ -17,18 +17,17 @@ def gapfill_target_bap(
     nodata=None,
 ):
     """
-    Fill nodata pixels in target BAP using one or more backup BAP composites.
+    Fill invalid pixels in target BAP using backup BAP composites.
 
-    Priority:
-        1. target_path
-        2. fill_paths[0]
-        3. fill_paths[1]
-        ...
+    A pixel is invalid if:
+        - all bands are nodata, or
+        - any band has a negative value
     """
 
     with rasterio.open(target_path) as src:
         target = src.read()
         profile = src.profile.copy()
+
         if nodata is None:
             nodata = src.nodata
 
@@ -36,20 +35,41 @@ def gapfill_target_bap(
         nodata = -9999
 
     final = target.copy()
-    missing = np.all(final == nodata, axis=0)
+
+    target_valid = (
+        ~np.all(final == nodata, axis=0)
+        & np.all(final >= 0, axis=0)
+    )
+
+    missing = ~target_valid
 
     for fill_path in fill_paths:
         with rasterio.open(fill_path) as src:
             fill = src.read()
 
-        fill_valid = ~np.all(fill == nodata, axis=0)
+        fill_valid = (
+            ~np.all(fill == nodata, axis=0)
+            & np.all(fill >= 0, axis=0)
+        )
+
         update = missing & fill_valid
 
         final[:, update] = fill[:, update]
-        missing = np.all(final == nodata, axis=0)
+
+        target_valid = (
+            ~np.all(final == nodata, axis=0)
+            & np.all(final >= 0, axis=0)
+        )
+
+        missing = ~target_valid
 
         if not np.any(missing):
             break
+
+    final[:, ~(
+        ~np.all(final == nodata, axis=0)
+        & np.all(final >= 0, axis=0)
+    )] = nodata
 
     profile.update(
         count=final.shape[0],
