@@ -507,8 +507,8 @@ def best_available_pixel_hls_windowed(
                     max_distance=max_cloud_distance,
                 )
 
-                clear = clear_padded[prow0:prow0 + h, pcol0:pcol0 + w]
-                dist_score = dist_padded[prow0:prow0 + h, pcol0:pcol0 + w]
+                clear = clear_padded[prow0 : prow0 + h, pcol0 : pcol0 + w]
+                dist_score = dist_padded[prow0 : prow0 + h, pcol0 : pcol0 + w]
 
                 score = base_score[i] * dist_score
                 score[~clear] = -np.inf
@@ -522,8 +522,8 @@ def best_available_pixel_hls_windowed(
                     block_best_score[update] = score[update]
                     block_best_idx[update] = i
 
-            composite[:, row0:row0 + h, col0:col0 + w] = block_composite
-            best_idx[row0:row0 + h, col0:col0 + w] = block_best_idx
+            composite[:, row0 : row0 + h, col0 : col0 + w] = block_composite
+            best_idx[row0 : row0 + h, col0 : col0 + w] = block_best_idx
 
         return composite, best_idx, profile, []
 
@@ -544,10 +544,10 @@ def write_raster(output_path, array, profile):
 
 
 if __name__ == "__main__":
-    composite_dir = Path(r"F:\yukon\processed\S30\composites")
-    fmask_dir = Path(r"F:\yukon\processed\S30\fmask")
-    metadata_dir = Path(r"F:\yukon\processed\S30\metadata")
-    output_dir = Path(r"F:\yukon\processed\S30\bap_outputs")
+    composite_dir = Path(r"F:\yukon\processed\L30\2023\composites")
+    fmask_dir = Path(r"F:\yukon\processed\L30\2023\fmask")
+    metadata_dir = Path(r"F:\yukon\processed\L30\2023\metadata")
+    output_dir = Path(r"F:\yukon\processed\L30\2023\bap_outputs")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     records, skipped = index_files(composite_dir, fmask_dir, metadata_dir)
